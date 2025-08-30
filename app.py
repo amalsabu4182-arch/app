@@ -1,16 +1,23 @@
-# app.py
 import sqlite3
 import datetime
 import calendar
+import csv
+from io import StringIO, BytesIO
 from flask import Flask, render_template, request, jsonify, g, send_file
 from waitress import serve
-from io import StringIO, BytesIO
-import csv
 import pytz
+import click
+from flask.cli import with_appcontext
 
 app = Flask(__name__)
 DATABASE = 'attendance.db'
 
+# --- Timezone Helper ---
+def get_ist_today():
+    ist = pytz.timezone('Asia/Kolkata')
+    return datetime.datetime.now(ist).date()
+
+# --- Database Functions ---
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
@@ -24,11 +31,20 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
-def get_ist_today():
-    ist = pytz.timezone('Asia/Kolkata')
-    return datetime.datetime.now(ist).date()
+def init_db():
+    db = get_db()
+    with open('schema.sql', 'r') as f:
+        db.executescript(f.read())
+    db.commit()
+    print("Database initialized.")
 
-# --- Authentication & Signup ---
+@app.cli.command('initdb')
+@with_appcontext
+def initdb_command():
+    """Initialize the database."""
+    init_db()
+
+# --- Auth & Signup ---
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json
@@ -38,32 +54,35 @@ def signup():
     role = data.get('role')
     class_name = data.get('class_name')
 
+    if not (username and password and name and role and class_name):
+        return jsonify({'success': False, 'message': 'All fields required.'}), 400
     if role not in ['teacher', 'student']:
         return jsonify({'success': False, 'message': 'Invalid role.'}), 400
 
     db = get_db()
     try:
-        class_id = None
+        # For teacher, create class if not exists
         if role == 'teacher':
-            db.execute('INSERT INTO classes (name) VALUES (?)', (class_name,))
+            db.execute('INSERT OR IGNORE INTO classes (name) VALUES (?)', (class_name,))
             db.commit()
             class_id = db.execute('SELECT id FROM classes WHERE name = ?', (class_name,)).fetchone()['id']
+            db.execute('INSERT INTO users (username, password, name, role, status, class_id) VALUES (?, ?, ?, ?, "pending", ?)',
+                       (username, password, name, role, class_id))
+            db.commit()
         elif role == 'student':
             class_row = db.execute('SELECT id FROM classes WHERE name = ?', (class_name,)).fetchone()
             if not class_row:
-                return jsonify({'success': False, 'message': 'Class not found.'}), 400
+                return jsonify({'success': False, 'message': 'Class not found. Ask your teacher to signup first.'}), 400
             class_id = class_row['id']
-
-        db.execute('INSERT INTO users (username, password, name, role, class_id) VALUES (?, ?, ?, ?, ?)',
-                   (username, password, name, role, class_id))
-        db.commit()
-        user_id = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()['id']
-        if role == 'student':
+            db.execute('INSERT INTO users (username, password, name, role, status, class_id) VALUES (?, ?, ?, ?, "pending", ?)',
+                       (username, password, name, role, class_id))
+            db.commit()
+            user_id = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()['id']
             db.execute('INSERT INTO students (user_id, class_id) VALUES (?, ?)', (user_id, class_id))
             db.commit()
         return jsonify({'success': True, 'message': 'Signup submitted. Await approval by admin.'})
     except sqlite3.IntegrityError:
-        return jsonify({'success': False, 'message': 'Username/Class already exists.'}), 409
+        return jsonify({'success': False, 'message': 'Username or class already exists.'}), 409
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -78,7 +97,7 @@ def login():
         return jsonify({'success': True, 'role': user['role'], 'name': user['name'], 'user_id': user['id'], 'class_id': user['class_id']})
     return jsonify({'success': False, 'message': 'Invalid credentials.'}), 401
 
-# --- Admin: Approve Users ---
+# --- Admin Functions ---
 @app.route('/api/admin/pending_users', methods=['GET'])
 def get_pending_users():
     db = get_db()
@@ -93,15 +112,20 @@ def approve_user():
     db.commit()
     return jsonify({'success': True, 'message': 'User approved.'})
 
-# --- Teacher: Mark Attendance ---
+# --- Teacher Functions ---
 @app.route('/api/teacher/students', methods=['GET'])
 def get_teacher_students():
     teacher_id = request.args.get('teacher_id')
     db = get_db()
     class_row = db.execute('SELECT id FROM classes WHERE teacher_id = ?', (teacher_id,)).fetchone()
+    # If not set, fallback to teacher's assigned class
     if not class_row:
-        return jsonify({'students': []})
-    class_id = class_row['id']
+        user_row = db.execute('SELECT class_id FROM users WHERE id = ?', (teacher_id,)).fetchone()
+        if not user_row or not user_row['class_id']:
+            return jsonify({'students': []})
+        class_id = user_row['class_id']
+    else:
+        class_id = class_row['id']
     students = db.execute('SELECT students.id, users.name FROM students JOIN users ON students.user_id = users.id WHERE students.class_id = ?', (class_id,))
     return jsonify({'students': [dict(s) for s in students]})
 
@@ -122,7 +146,7 @@ def mark_attendance():
     db.commit()
     return jsonify({'success': True, 'message': 'Attendance marked.'})
 
-# --- Teacher: Monthly Report & Export ---
+# --- Monthly Report & Export ---
 @app.route('/api/teacher/monthly_report', methods=['GET'])
 def monthly_report():
     class_id = request.args.get('class_id')
@@ -185,10 +209,7 @@ def export_report():
     output_bytes.seek(0)
     return send_file(output_bytes, mimetype='text/csv', as_attachment=True, download_name=f'report_{month_str}.csv')
 
-# --- Teacher: Student & Holiday Management ---
-# Add endpoints for student CRUD and holiday CRUD similarly.
-
-# --- Student: Attendance Summary ---
+# --- Student Functions ---
 @app.route('/api/student/attendance', methods=['POST'])
 def student_attendance():
     user_id = request.json.get('user_id')
@@ -213,6 +234,10 @@ def student_attendance():
     percentage = (present / total * 100) if total > 0 else 0
     return jsonify({'records': [dict(x) for x in records], 'present': present, 'absent': absent, 'percentage': round(percentage)})
 
+@app.route("/")
+def index():
+    return render_template("index.html")
+
 if __name__ == '__main__':
-    print("Starting server at http://0.0.0.0:5000")
+    print("Starting production server at http://0.0.0.0:5000")
     serve(app, host='0.0.0.0', port=5000)
