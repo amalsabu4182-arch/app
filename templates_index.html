@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Attendance System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+<div class="container mx-auto p-4 max-w-4xl">
+    <header class="mb-8 flex items-center gap-4">
+        <h1 class="text-2xl font-bold">Attendance System</h1>
+        <span id="logged-in-user" class="ml-auto text-slate-600"></span>
+        <button id="logout-btn" class="hidden bg-red-500 text-white px-3 py-1 rounded">Logout</button>
+    </header>
+
+    <!-- Role Selection -->
+    <div id="role-selection" class="mb-8">
+        <button class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded m-2" onclick="showLogin('admin')">Admin Login</button>
+        <button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded m-2" onclick="showLogin('teacher')">Teacher Login</button>
+        <button class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded m-2" onclick="showLogin('student')">Student Login</button>
+        <button class="bg-cyan-500 hover:bg-cyan-600 text-white px-4 py-2 rounded m-2" onclick="showSignup()">Sign Up (Teacher/Student)</button>
+    </div>
+
+    <!-- Login Forms -->
+    <div id="login-forms">
+        <form id="login-admin" class="hidden mb-8" onsubmit="event.preventDefault(); login('admin');">
+            <h2 class="font-bold text-xl mb-2">Admin Login</h2>
+            <input type="text" id="admin-username" placeholder="Username" class="border rounded px-3 py-2 w-full mb-2">
+            <input type="password" id="admin-password" placeholder="Password" class="border rounded px-3 py-2 w-full mb-2">
+            <button class="bg-indigo-500 text-white px-4 py-2 rounded w-full">Login</button>
+            <div id="admin-login-error" class="text-red-500 mt-2"></div>
+        </form>
+        <form id="login-teacher" class="hidden mb-8" onsubmit="event.preventDefault(); login('teacher');">
+            <h2 class="font-bold text-xl mb-2">Teacher Login</h2>
+            <input type="text" id="teacher-username" placeholder="Username" class="border rounded px-3 py-2 w-full mb-2">
+            <input type="password" id="teacher-password" placeholder="Password" class="border rounded px-3 py-2 w-full mb-2">
+            <button class="bg-green-500 text-white px-4 py-2 rounded w-full">Login</button>
+            <div id="teacher-login-error" class="text-red-500 mt-2"></div>
+        </form>
+        <form id="login-student" class="hidden mb-8" onsubmit="event.preventDefault(); login('student');">
+            <h2 class="font-bold text-xl mb-2">Student Login</h2>
+            <input type="text" id="student-username" placeholder="Username" class="border rounded px-3 py-2 w-full mb-2">
+            <input type="password" id="student-password" placeholder="Password" class="border rounded px-3 py-2 w-full mb-2">
+            <button class="bg-blue-500 text-white px-4 py-2 rounded w-full">Login</button>
+            <div id="student-login-error" class="text-red-500 mt-2"></div>
+        </form>
+    </div>
+
+    <!-- Signup Form -->
+    <form id="signup-form" class="hidden mb-8" onsubmit="event.preventDefault(); signup();">
+        <h2 class="font-bold text-xl mb-2">Sign Up (Teacher/Student)</h2>
+        <select id="signup-role" class="border rounded px-3 py-2 w-full mb-2">
+            <option value="teacher">Teacher</option>
+            <option value="student">Student</option>
+        </select>
+        <input type="text" id="signup-username" placeholder="Username" class="border rounded px-3 py-2 w-full mb-2">
+        <input type="password" id="signup-password" placeholder="Password" class="border rounded px-3 py-2 w-full mb-2">
+        <input type="text" id="signup-name" placeholder="Full Name" class="border rounded px-3 py-2 w-full mb-2">
+        <input type="text" id="signup-class" placeholder="Class/Section Name" class="border rounded px-3 py-2 w-full mb-2">
+        <button class="bg-cyan-500 text-white px-4 py-2 rounded w-full">Sign Up</button>
+        <div id="signup-error" class="text-red-500 mt-2"></div>
+        <div id="signup-success" class="text-green-500 mt-2"></div>
+    </form>
+
+    <!-- Dashboards -->
+    <div id="admin-dashboard" class="hidden">
+        <h2 class="font-bold text-xl mb-4">Admin Dashboard</h2>
+        <div class="mb-6">
+            <h3 class="font-bold mb-2">Pending Approvals</h3>
+            <table class="w-full border mb-2">
+                <thead><tr class="bg-slate-100"><th>Username</th><th>Name</th><th>Role</th><th>Class</th><th>Action</th></tr></thead>
+                <tbody id="pending-users-table"></tbody>
+            </table>
+        </div>
+        <!-- Class/Teacher/Student Management can be added here -->
+    </div>
+
+    <div id="teacher-dashboard" class="hidden">
+        <h2 class="font-bold text-xl mb-4">Teacher Dashboard</h2>
+        <div class="mb-6">
+            <h3 class="font-bold mb-2">Mark Attendance</h3>
+            <table class="w-full border mb-2">
+                <thead><tr class="bg-slate-100"><th>Name</th><th>Status</th><th>Remarks</th><th>Action</th></tr></thead>
+                <tbody id="teacher-students-table"></tbody>
+            </table>
+        </div>
+        <div class="mb-6">
+            <h3 class="font-bold mb-2">Monthly Report</h3>
+            <input type="month" id="report-month" class="border rounded px-2 py-1 mb-2">
+            <button onclick="viewMonthlyReport()" class="bg-slate-500 text-white px-3 py-1 rounded">View</button>
+            <button onclick="exportMonthlyReport()" class="bg-slate-700 text-white px-3 py-1 rounded">Export CSV</button>
+            <div id="monthly-report-table" class="mt-2"></div>
+        </div>
+        <!-- Add student/holiday management here -->
+    </div>
+
+    <div id="student-dashboard" class="hidden">
+        <h2 class="font-bold text-xl mb-4">Student Dashboard</h2>
+        <div class="mb-6">
+            <h3 class="font-bold mb-2">Attendance Summary</h3>
+            <div id="student-summary"></div>
+        </div>
+        <div class="mb-6">
+            <h3 class="font-bold mb-2">Detailed Log</h3>
+            <table class="w-full border mb-2">
+                <thead><tr class="bg-slate-100"><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
+                <tbody id="student-log-table"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- State ---
+    let currentUser = null;
+
+    // --- UI helpers ---
+    function showLogin(role) {
+        document.getElementById('role-selection').classList.add('hidden');
+        document.getElementById('signup-form').classList.add('hidden');
+        document.getElementById('login-admin').classList.add('hidden');
+        document.getElementById('login-teacher').classList.add('hidden');
+        document.getElementById('login-student').classList.add('hidden');
+        document.getElementById('admin-dashboard').classList.add('hidden');
+        document.getElementById('teacher-dashboard').classList.add('hidden');
+        document.getElementById('student-dashboard').classList.add('hidden');
+        document.getElementById('logout-btn').classList.add('hidden');
+        if (role === 'admin') document.getElementById('login-admin').classList.remove('hidden');
+        else if (role === 'teacher') document.getElementById('login-teacher').classList.remove('hidden');
+        else if (role === 'student') document.getElementById('login-student').classList.remove('hidden');
+    }
+    function showSignup() {
+        document.getElementById('role-selection').classList.add('hidden');
+        document.getElementById('signup-form').classList.remove('hidden');
+        document.getElementById('login-admin').classList.add('hidden');
+        document.getElementById('login-teacher').classList.add('hidden');
+        document.getElementById('login-student').classList.add('hidden');
+    }
+    function showDashboard(role) {
+        document.getElementById('role-selection').classList.add('hidden');
+        document.getElementById('login-admin').classList.add('hidden');
+        document.getElementById('login-teacher').classList.add('hidden');
+        document.getElementById('login-student').classList.add('hidden');
+        document.getElementById('signup-form').classList.add('hidden');
+        document.getElementById('logout-btn').classList.remove('hidden');
+        document.getElementById('logged-in-user').textContent = `${role.charAt(0).toUpperCase() + role.slice(1)}: ${currentUser.name}`;
+        if (role === 'admin') {
+            document.getElementById('admin-dashboard').classList.remove('hidden');
+            fetchPendingUsers();
+        } else if (role === 'teacher') {
+            document.getElementById('teacher-dashboard').classList.remove('hidden');
+            fetchTeacherStudents();
+        } else if (role === 'student') {
+            document.getElementById('student-dashboard').classList.remove('hidden');
+            fetchStudentAttendance();
+        }
+    }
+
+    // --- API Calls ---
+    async function apiCall(endpoint, method = 'GET', body = null) {
+        const options = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body) options.body = JSON.stringify(body);
+        const res = await fetch(endpoint, options);
+        if (!res.ok) throw new Error((await res.json()).message || "Error");
+        return await res.json();
+    }
+
+    // --- Login/Signup ---
+    async function login(role) {
+        let username, password;
+        if (role === 'admin') {
+            username = document.getElementById('admin-username').value;
+            password = document.getElementById('admin-password').value;
+        } else if (role === 'teacher') {
+            username = document.getElementById('teacher-username').value;
+            password = document.getElementById('teacher-password').value;
+        } else if (role === 'student') {
+            username = document.getElementById('student-username').value;
+            password = document.getElementById('student-password').value;
+        }
+        try {
+            const data = await apiCall('/api/login', 'POST', { username, password });
+            currentUser = data;
+            showDashboard(data.role);
+        } catch (e) {
+            document.getElementById(role + '-login-error').textContent = e.message;
+        }
+    }
+    async function signup() {
+        const role = document.getElementById('signup-role').value;
+        const username = document.getElementById('signup-username').value;
+        const password = document.getElementById('signup-password').value;
+        const name = document.getElementById('signup-name').value;
+        const class_name = document.getElementById('signup-class').value;
+        try {
+            const data = await apiCall('/api/signup', 'POST', { username, password, name, role, class_name });
+            document.getElementById('signup-success').textContent = data.message;
+            document.getElementById('signup-error').textContent = '';
+        } catch (e) {
+            document.getElementById('signup-error').textContent = e.message;
+            document.getElementById('signup-success').textContent = '';
+        }
+    }
+
+    // --- Admin Dashboard ---
+    async function fetchPendingUsers() {
+        const data = await apiCall('/api/admin/pending_users');
+        const table = document.getElementById('pending-users-table');
+        table.innerHTML = '';
+        if (!data.pending_users.length) {
+            table.innerHTML = `<tr><td colspan="5" class="text-center p-2">No pending users.</td></tr>`;
+        }
+        data.pending_users.forEach(u => {
+            table.innerHTML += `<tr>
+                <td>${u.username}</td>
+                <td>${u.name}</td>
+                <td>${u.role}</td>
+                <td>${u.class_id || ''}</td>
+                <td><button class="bg-green-500 text-white px-2 py-1 rounded" onclick="approveUser(${u.id})">Approve</button></td>
+            </tr>`;
+        });
+    }
+    async function approveUser(id) {
+        await apiCall('/api/admin/approve_user', 'POST', { user_id: id });
+        fetchPendingUsers();
+    }
+
+    // --- Teacher Dashboard ---
+    async function fetchTeacherStudents() {
+        const data = await apiCall(`/api/teacher/students?teacher_id=${currentUser.user_id}`);
+        const table = document.getElementById('teacher-students-table');
+        table.innerHTML = '';
+        data.students.forEach(s => {
+            table.innerHTML += `<tr>
+                <td>${s.name}</td>
+                <td>
+                  <select id="status-${s.id}" class="border rounded px-2 py-1">
+                    <option value="Full Day">Full Day</option>
+                    <option value="Half Day">Half Day</option>
+                    <option value="Absent">Absent</option>
+                  </select>
+                </td>
+                <td><input type="text" id="remarks-${s.id}" class="border rounded px-2 py-1"></td>
+                <td>
+                  <button class="bg-indigo-500 text-white px-2 py-1 rounded" onclick="markAttendance(${s.id})">Mark</button>
+                </td>
+            </tr>`;
+        });
+    }
+    async function markAttendance(student_id) {
+        const status = document.getElementById(`status-${student_id}`).value;
+        const remarks = document.getElementById(`remarks-${student_id}`).value;
+        await apiCall('/api/teacher/mark_attendance', 'POST', {
+            student_id, class_id: currentUser.class_id, status, remarks
+        });
+        alert('Attendance marked!');
+    }
+    async function viewMonthlyReport() {
+        const month = document.getElementById('report-month').value;
+        if (!month) return alert('Select month');
+        const data = await apiCall(`/api/teacher/monthly_report?class_id=${currentUser.class_id}&month=${month}`);
+        let html = `<table class="w-full border"><thead><tr><th>Name</th><th>Present</th><th>Absent</th></tr></thead><tbody>`;
+        data.report.forEach(r => {
+            html += `<tr><td>${r.name}</td><td>${r.present}</td><td>${r.absent}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        document.getElementById('monthly-report-table').innerHTML = html;
+    }
+    function exportMonthlyReport() {
+        const month = document.getElementById('report-month').value;
+        if (!month) return alert('Select month');
+        window.location.href = `/api/teacher/export_report?class_id=${currentUser.class_id}&month=${month}`;
+    }
+
+    // --- Student Dashboard ---
+    async function fetchStudentAttendance() {
+        const data = await apiCall('/api/student/attendance', 'POST', { user_id: currentUser.user_id });
+        document.getElementById('student-summary').innerHTML = `
+            <div>Present: <span class="font-bold">${data.present}</span></div>
+            <div>Absent: <span class="font-bold">${data.absent}</span></div>
+            <div>Percentage: <span class="font-bold">${data.percentage}%</span></div>
+        `;
+        const table = document.getElementById('student-log-table');
+        table.innerHTML = '';
+        data.records.forEach(r => {
+            table.innerHTML += `<tr>
+                <td>${r.date}</td>
+                <td>${r.status}</td>
+                <td>${r.remarks || '-'}</td>
+            </tr>`;
+        });
+    }
+
+    // --- Logout ---
+    document.getElementById('logout-btn').onclick = function () {
+        currentUser = null;
+        document.getElementById('logged-in-user').textContent = '';
+        document.getElementById('admin-dashboard').classList.add('hidden');
+        document.getElementById('teacher-dashboard').classList.add('hidden');
+        document.getElementById('student-dashboard').classList.add('hidden');
+        document.getElementById('role-selection').classList.remove('hidden');
+        document.getElementById('logout-btn').classList.add('hidden');
+    };
+</script>
+</body>
+</html>
